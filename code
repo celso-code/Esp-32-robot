@@ -1,0 +1,79 @@
+#include <WiFi.h>
+#include <WiFiAP.h>
+#include <FS_MX1508.h>
+
+// Criar Access Point
+const char* ssid = "ESP32";
+const char* password = "12345678";
+NetworkServer server(80);
+
+// Criar os motores (ajuste os pinos conforme seu hardware)
+MX1508 motorEsquerdo(18, 19); // IN1, IN2
+MX1508 motorDireito(22, 23);  // IN3, IN4
+
+void setup() {
+  Serial.begin(115200);
+  ledcAttach(4, 5000, 8);
+  pinMode(4, OUTPUT);
+
+  // Inicia a rede WiFi em modo AP
+  WiFi.softAP(ssid, password);
+  Serial.print("Rede criada: ");
+  Serial.println(ssid);
+  Serial.print("IP local: ");
+  Serial.println(WiFi.softAPIP());
+  server.begin();
+}
+
+void loop() {
+  ledcWrite(4, 66);
+  NetworkClient client = server.accept();
+  if (client) {
+    String req = "";
+    while (client.connected()) {
+      if (client.available()) {
+        char c = client.read();
+        req += c;
+        if (req.endsWith("\r\n\r\n")) {
+          // Comandos simples via rota
+          if (req.indexOf("GET /frente") >= 0) {
+            motorEsquerdo.motorGo(255);
+            motorDireito.motorGo(255);
+          } else if (req.indexOf("GET /atras") >= 0) {
+            motorEsquerdo.motorGo(-200);
+            motorDireito.motorGo(-200);
+          } else if (req.indexOf("GET /esquerda") >= 0) {
+            motorEsquerdo.motorGo(-200);
+            motorDireito.motorGo(200);
+          } else if (req.indexOf("GET /direita") >= 0) {
+            motorEsquerdo.motorGo( 200);
+            motorDireito.motorGo(-200);
+          } else if (req.indexOf("GET /parar") >=0) {
+            motorEsquerdo.motorStop();
+            motorDireito.motorStop();
+          }
+          // HTML da interface
+          client.println("HTTP/1.1 200 OK");
+          client.println("Content-type:text/html");
+          client.println();
+
+          client.println("<!DOCTYPE html><html><head><meta charset='UTF-8'>");
+          client.println("<title>Controle Robô</title>");
+          client.println("<style>button{font-size:24px;margin:10px;padding:10px 20px;}</style>");
+          client.println("</head><body><h1>Controle de Movimento</h1>");
+
+          client.println("<form action='/frente'><button>Frente ⬆️</button></form>");
+          client.println("<form action='/atras'><button>Atrás ⬇️</button></form>");
+          client.println("<form action='/esquerda'><button>Esquerda ⬅️</button></form>");
+          client.println("<form action='/direita'><button>Direita ➡️</button></form>");
+          client.println("<form action='/parar'><button>🛑 Parar</button></form>");
+
+          client.println("</body></html>");
+          break;
+        }
+      }
+    }
+    client.stop();  // Stop motors ao soltar o botão
+    Serial.println("Cliente desconectado");
+  }
+}
